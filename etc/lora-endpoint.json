@@ -1,0 +1,21 @@
+{
+  "networks": {
+    "cra.cz": {
+      "push": {
+        "authorization": "..."
+      },
+      "pull": {
+        "interval": 900,
+        "username": "...",
+        "password": "...",
+        "tenantId": "..."
+      }
+    }
+  },
+  "credentials": {
+    "373836375F48901A": {
+      "appskey": "...",
+      "devaddr": "..."
+    }
+  }
+}
