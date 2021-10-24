@@ -14,29 +14,35 @@ import loadArguments from './args';
 import craApi from './cra';
 import Database from './db';
 import Message from './message';
+import { AsyncMqttClient } from 'async-mqtt';
+
+declare global {
+    let devMode: boolean;
+}
 
 const dbg = debug('lora:main');
-const devMode = process.env.NODE_ENV === "development";
-(global as any).devMode = devMode;
+devMode = process.env.NODE_ENV === "development";
 
-const log = msg => process.stdout.write(msg);
-const err = msg => process.stderr.write(msg);
+const log = (msg: string) => process.stdout.write(msg);
+const err = (msg: string) => process.stderr.write(msg);
 
 
-async function createHTTPSServer(app: http.RequestListener, certFile: string, optKeyFile?: string) {
-    const args = {} as any;
-    const keyFile = optKeyFile || certFile;
+async function createHTTPSServer(app: express.Application, crtFilename: string, keyFilename?: string) {
+    const args: https.ServerOptions = {};
 
-    log(`Loading TLS server certificate from file '${certFile}'...`);
-    args.cert = await fs.readFile(certFile);
-    log('done.\n');
+    debug(`Loading TLS server certificate from file '${crtFilename}'`);
+    args.cert = await fs.readFile(crtFilename);
 
-    log(`Loading TLS private key from file '${keyFile}'...`);
-    args.key = await fs.readFile(keyFile);
-    log('done.\n');
+    if (keyFilename === undefined) {
+        debug(`TLS private key filename not specified, trying to load the key from ${crtFilename}`)
+        keyFilename = crtFilename;
+    }
 
-    log(`Setting up a HTTPS server...`);
+    debug(`Loading TLS private key from file '${keyFilename}'`);
+    args.key = await fs.readFile(keyFilename);
+
     const server = https.createServer(args, app);
+    const { context } = (server as any)._sharedCreds;
 
     // If we drop privileges later, we will most likely lose access to the TLS
     // certificate and key files. Spawn a helper child process that will keep
@@ -44,7 +50,7 @@ async function createHTTPSServer(app: http.RequestListener, certFile: string, op
     // re-read the files for us whenever they change.
 
     const dir = dirname(fileURLToPath(import.meta.url));
-    const watcher = fork(`${dir}/watcher.js`, [certFile, keyFile], { cwd: '/' });
+    const watcher = fork(`${dir}/watcher.js`, [crtFilename, keyFilename], { cwd: '/' });
     watcher.on('disconnect', abort);
     watcher.on('message', ({ filename, data }: any) => {
         if (data === null) return;
@@ -52,14 +58,13 @@ async function createHTTPSServer(app: http.RequestListener, certFile: string, op
 
         try {
             const contents = Buffer.from(data, 'base64');
-            if (filename === certFile) (server as any)._sharedCreds.context.setCert(contents);
-            if (filename === keyFile) (server as any)._sharedCreds.context.setKey(contents);
-        } catch (error) {
+            if (filename === crtFilename) context.setCert(contents);
+            if (filename === keyFilename) context.setKey(contents);
+        } catch (error: any) {
             err(`Failed to reload TLS credentials: ${error.message}\n`);
         }
     });
 
-    log('done.\n');
     return server;
 }
 
@@ -111,7 +116,6 @@ function dropPrivileges(uid?: number, gid?: number) {
     log(`Changing working directory to /...`);
     process.chdir('/');
     log('done.\n');
-
 
     if (gid) {
         log(`Switching to gid ${gid}...`);
@@ -183,7 +187,7 @@ class QueueManager {
     const db = new Database(args.db);
     const queueMgr = new QueueManager(db);
 
-    let mqttClient;
+    let mqttClient: AsyncMqttClient;
     if (args.mqtt_broker) {
         log(`Connecting to the MQTT broker at ${args.mqtt_broker}...`);
         const mqtt = (await import('async-mqtt')).default;

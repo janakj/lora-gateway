@@ -1,54 +1,55 @@
-import { watchFile, promises as fs } from 'fs';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import _ from 'lodash';
-import { Lock } from './utils';
-
-const POLL_INTERVAL = 60 * 1000;
-
-const lock = new Lock();
-
-
-const locked = fn =>
-    async (...args) => {
-        await lock.acquire()
-        try {
-            return await fn(...args);
-        } finally {
-            lock.release()
-        }
-    }
+import { parseNumber } from './utils';
+import * as defaults from './defaults';
 
 
 export default function watch(filenames: string[] | string, send: Function) {
+    const interval = parseNumber(process.env.CERTIFICATE_CHECK_INTERVAL
+        || defaults.CERTIFICATE_CHECK_INTERVAL, 1);
     const f = typeof filenames === 'string' ? [filenames] : _.uniq(filenames);
 
-    for (const filename of f) {
-        watchFile(filename, { interval: POLL_INTERVAL }, locked(async stat => {
+    const current: Record<string, string> = {};
+    for(const filename of f)
+        current[filename] = readFileSync(filename, 'hex');
+
+    setInterval(async () => {
+        for(const filename of f) {
             try {
-                const data = stat.nlink ? (await fs.readFile(filename)).toString('base64') : null;
-                try {
-                    await send({ filename, data })
-                } catch (e) {
-                    process.exit();
+                const data = readFileSync(filename, 'hex');
+                if (data !== current[filename]) {
+                    try {
+                        await send({ filename, data })
+                    } catch(e) {
+                        process.exit();
+                    }
+                    current[filename] = data;
                 }
-            } catch (error) {
-                process.stderr.write(`Error while reloading '${filename}': ${error.message}\n`);
+            } catch(error: any) {
+                process.stderr.write(`Error while reading ${filename}: ${error.message}`);
             }
-        }))
-    }
+        }
+    }, interval);
 }
 
 // This function will be invoked when this module is started as the main module.
 // Use the IPC channel established by the parent to communicate. The filenames
-// to watch will be given to us on the command line.
+// to watch will be given on the command line.
 
 function main() {
     if (!process.send)
         throw new Error('Bug: Parent process did not establish an IPC channel');
 
     process.once('disconnect', () => { process.exit() });
-    watch(process.argv.slice(2), promisify(process.send.bind(process)));
+
+    try {
+        watch(process.argv.slice(2), promisify(process.send.bind(process)));
+    } catch(error: any) {
+        process.stderr.write(`Error in watcher: ${error.message}`);
+        process.exit();
+    }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url))

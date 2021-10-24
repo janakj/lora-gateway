@@ -1,4 +1,3 @@
-/* eslint-disable no-param-reassign */
 import debug from 'debug';
 import express from 'express';
 import fetch from 'node-fetch';
@@ -6,13 +5,14 @@ import { UnauthorizedError, NotFoundError, jsonify, BadRequestError } from './ut
 import { decrypt } from './lora';
 import Database from './db';
 import Message from './message';
+import { Arguments } from './args';
 
 const dbg = debug('lora:cra');
 
 const EUI_REGEX = /[0-9A-F]{16}/,
     API_BASE = 'https://api.iot.cra.cz/cxf/IOTServices/v2';
 
-const err = msg => process.stderr.write(msg);
+const err = (msg: string) => process.stderr.write(msg);
 
 interface Envelope {
     type : string;
@@ -115,7 +115,7 @@ class API {
             throw error;
         }
 
-        const data = await res.json();
+        const data = await res.json() as any;
         if (typeof data !== 'object' || typeof data.code !== 'number')
             throw new Error(`Got invalid response from the API endpoint ${path}`)
 
@@ -144,7 +144,7 @@ class API {
 
         try {
             res = await this.postJSON(path, body);
-        } catch (error) {
+        } catch (error: any) {
             if (error.code !== 401) throw error;
             await this.login();
             res = await this.postJSON(path, body);
@@ -167,7 +167,7 @@ class API {
                 ...(dateTo && { dateTo })
             }
         });
-        return (res.data || []).map(msg => JSON.parse(msg));
+        return (res.data || []).map((msg: string) => JSON.parse(msg));
     }
 }
 
@@ -202,10 +202,10 @@ class Puller {
                 // Update the timestamp of the most recently fetched message only after
                 // we have successfully submitted all of them.
                 this.db.set('timestamp', now.toISOString());
-            } catch (error) {
+            } catch (error: any) {
                 err(`Error while processing messages: ${error.message}\n`);
             }
-        } catch (error) {
+        } catch (error: any) {
             err(`Error while fetching messages from cra.cz: ${error.message}\n`);
         }
         setTimeout(this.fetch, this.interval);
@@ -213,7 +213,7 @@ class Puller {
 }
 
 
-export default async function (args, db, onMessage) {
+export default async function (args: Arguments, db: Database, onMessage: (msg: Message) => void) {
     const netId = 'cra.cz';
 
     async function processMessage(src: CraMessage) {
@@ -226,7 +226,7 @@ export default async function (args, db, onMessage) {
             // resulting message.
             const ciphertext = Buffer.from(src.encdata, 'hex');
 
-            const { appskey, devaddr } = (args.credentials || {})[src.EUI] || {};
+            const { appskey, devaddr } = (args.credentials as any || {})[src.EUI] || {};
             if (appskey && devaddr) {
                 data = decrypt(ciphertext, devaddr, appskey, src.fcnt);
                 encrypted = false;
@@ -257,12 +257,11 @@ export default async function (args, db, onMessage) {
         } as Message)
     }
 
-    const network = (args.networks || {})[netId];
+    const network = (args.networks as any || {})[netId];
 
     const { interval, username, password, tenantId } = network.pull || {};
     if (username && password && tenantId) {
         dbg(`Starting message puller for network ${netId} as user ${username}`);
-        // eslint-disable-next-line no-new
         new Puller(new API(username, password, tenantId), db, (interval || 60) * 1000, processMessage);
     } else {
         dbg(`NOT starting message puller for network ${netId} (missing credentials)`);

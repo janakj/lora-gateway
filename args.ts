@@ -2,7 +2,7 @@ import debug from 'debug';
 import userid from 'userid';
 import parseCmdlineArgs from 'command-line-args';
 import { promises as fs } from 'fs';
-import { checkInt } from './utils';
+import { parseNumber } from './utils';
 
 const dbg = debug('lora:args');
 
@@ -71,23 +71,23 @@ function parseListenString(val: string) {
     if (port.toLowerCase() === 'random') port = 0;
 
     try {
-        port = checkInt(port, 0, 65535);
+        port = parseNumber(port, 0, 65535);
         const rv: any = { port };
         if (address) rv.address = address;
         return rv;
-    } catch (e) {
+    } catch (e: any) {
         throw new Error(`Invalid port number: ${e.message}`);
     }
 }
 
 
-async function loadConfig(filename) {
+async function loadConfig(filename: string) {
     dbg(`Loading configuration file '${filename}'`);
     try {
         const rv = JSON.parse(await fs.readFile(filename, 'utf-8'));
         dbg(`Configuration file '${filename}' loaded`);
         return rv;
-    } catch (e) {
+    } catch (e: any) {
         if (e.code !== 'ENOENT') throw e;
         dbg(`Configuration file '${filename}' does not exist, skipping.`)
         return {};
@@ -96,7 +96,7 @@ async function loadConfig(filename) {
 
 
 function loadEnvironment() {
-    const rv = {};
+    const rv: Record<string, string> = {};
     for (const [name, value] of Object.entries(process.env))
         if (typeof value === 'string') rv[name.toLowerCase()] = value;
 
@@ -104,7 +104,7 @@ function loadEnvironment() {
 }
 
 
-function parseCredentials(cred) {
+function parseCredentials(cred: any) {
     if (cred === null)
         throw new Error("Missing 'credentials' parameter value");
 
@@ -115,24 +115,22 @@ function parseCredentials(cred) {
         } catch (e) { /* empty */ }
     }
 
-    if (typeof cred !== 'undefined' && typeof cred !== 'object')
+    if (cred !== undefined && typeof cred !== 'object')
         throw new Error("Invalid 'credentials' parameter format (JSON object expected)");
 
     return cred;
 }
 
 
-function parseUser(user) {
+function parseUser(user: any) {
     if (user === null)
         throw new Error("Missing 'user' parameter value");
 
-    if (typeof user === 'undefined') return user;
+    if (user === undefined) return user;
 
     try {
-        // eslint-disable-next-line no-param-reassign
-        user = checkInt(user, 0);
+        user = parseNumber(user, 0);
     } catch (error) {
-        // eslint-disable-next-line no-param-reassign
         user = userid.uid(user);
     }
 
@@ -140,17 +138,15 @@ function parseUser(user) {
 }
 
 
-function parseGroup(group) {
+function parseGroup(group: any) {
     if (group === null)
         throw new Error("Missing 'group' parameter value");
 
-    if (typeof group === 'undefined') return group;
+    if (group === undefined) return group;
 
     try {
-        // eslint-disable-next-line no-param-reassign
-        group = checkInt(group, 0);
+        group = parseNumber(group, 0);
     } catch (error) {
-        // eslint-disable-next-line no-param-reassign
         group = userid.gid(group);
     }
 

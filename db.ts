@@ -13,42 +13,19 @@ export default class Database {
     queueDelete : Sqlite.Statement;
     queueSelect : Sqlite.Statement;
 
-    constructor(filename) {
-        // Create the directory for database files. Set the permissions to 1777 to
-        // make sure that we can create files in the directory after dropping
-        // privileges (switching users). The directory will have the same permissions
-        // as /tmp, i.e., everybody will be able to write, but only the owner will be
-        // able to delete the files.
+    constructor(filename: string) {
+        // Create the directory for database files. Set the permissions to 1777
+        // to make sure that we can create files in the directory after dropping
+        // privileges (switching users). The directory will have the same
+        // permissions as /tmp, i.e., everybody will be able to write, but only
+        // the owner will be able to delete the files.
         const dir = dirname(filename);
         mkdirSync(dir, { recursive: true });
         chmodSync(dir, 0o1777);
 
         this.db = new Sqlite(filename);
         this.createTables();
-        this.createStatements();
-    }
 
-    createTables() {
-        // eslint-disable-next-line no-multi-str
-        this.db.exec("CREATE TABLE IF NOT EXISTS attrs (\n\
-    name  TEXT NOT NULL,                                \n\
-    value TEXT DEFAULT NULL);                           \n\
-    CREATE UNIQUE INDEX IF NOT EXISTS attrIndex ON attrs(name);");
-
-        // eslint-disable-next-line no-multi-str
-        this.db.exec("CREATE TABLE IF NOT EXISTS seen (\n\
-    id TEXT NOT NULL);                                 \n\
-    CREATE UNIQUE INDEX IF NOT EXISTS seenIndex ON seen(id);");
-
-        // eslint-disable-next-line no-multi-str
-        this.db.exec("CREATE TABLE IF NOT EXISTS queue (\n\
-    id        INTEGER PRIMARY KEY,                      \n\
-    messageId TEXT NOT NULL,                            \n\
-    message   TEXT NOT NULL);                           \n\
-    CREATE UNIQUE INDEX IF NOT EXISTS queueIndex ON queue(messageId);");
-    }
-
-    createStatements() {
         this.seenSelect = this.db.prepare('SELECT * FROM seen WHERE id=?');
         this.seenInsert = this.db.prepare('INSERT INTO seen (id) VALUES (?)');
 
@@ -60,20 +37,37 @@ export default class Database {
         this.queueSelect = this.db.prepare('SELECT message FROM queue');
     }
 
-    isSeen(id) {
-        return typeof this.seenSelect.get(id) !== 'undefined';
+    createTables() {
+        this.db.exec("CREATE TABLE IF NOT EXISTS attrs (\n\
+    name  TEXT NOT NULL,                                \n\
+    value TEXT DEFAULT NULL);                           \n\
+    CREATE UNIQUE INDEX IF NOT EXISTS attrIndex ON attrs(name);");
+
+        this.db.exec("CREATE TABLE IF NOT EXISTS seen (\n\
+    id TEXT NOT NULL);                                 \n\
+    CREATE UNIQUE INDEX IF NOT EXISTS seenIndex ON seen(id);");
+
+        this.db.exec("CREATE TABLE IF NOT EXISTS queue (\n\
+    id        INTEGER PRIMARY KEY,                      \n\
+    messageId TEXT NOT NULL,                            \n\
+    message   TEXT NOT NULL);                           \n\
+    CREATE UNIQUE INDEX IF NOT EXISTS queueIndex ON queue(messageId);");
     }
 
-    setSeen(id) {
+    isSeen(id: string) {
+        return this.seenSelect.get(id) !== undefined;
+    }
+
+    setSeen(id: string) {
         this.seenInsert.run(id);
     }
 
-    get(name) {
+    get(name: string) {
         return (this.attrSelect.get(name) || {}).value;
     }
 
     set(name: string, value?: string) {
-        this.attrReplace.run(name, typeof value === 'undefined' ? null : value);
+        this.attrReplace.run(name, value === undefined ? null : value);
     }
 
     enqueue(msg: Message) {

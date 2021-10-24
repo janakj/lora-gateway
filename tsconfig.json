@@ -1,19 +1,17 @@
 {
     "compilerOptions": {
-      "allowJs": true,
-      "module": "ESNext",
-      "moduleResolution": "node",
-      "allowSyntheticDefaultImports": true,
-      "target": "ES2019",
-      "sourceMap": true,
-      "outDir": "dist",
-      "lib": ["ES2020"],
-      "strictNullChecks": true,
-      "esModuleInterop": true
+        "target": "ES2020",
+        "lib": ["ES2020"],
+        "module": "es2020",
+        "moduleResolution": "node",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "allowJs": true,
+        "outDir": "dist"
     },
     "exclude": [
-      "dist",
-      "node_modules",
-      "templates"
+        "dist",
+        "node_modules"
     ]
 }
