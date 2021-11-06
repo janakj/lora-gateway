@@ -221,10 +221,10 @@ export default function (args: Arguments, db: Database, onMessage: (msg: Message
         let data, encrypted;
 
         if (!src.data && src.encdata) {
-            // If we get an encrypted payload, attempt to decrypted. If description
-            // fails, e.g., due to missing credentials, pass the encrypted payload to
-            // upper layers unmodified, but set the "encrypted" attribute on the
-            // resulting message.
+            // If we get an encrypted payload, attempt to decrypt. If
+            // description fails, e.g., due to missing credentials, pass the
+            // encrypted payload to upper layers unmodified, but set the
+            // "encrypted" attribute on the resulting message.
             const ciphertext = Buffer.from(src.encdata, 'hex');
 
             const { appskey, devaddr } = (args.credentials as any || {})[src.EUI] || {};
@@ -278,6 +278,8 @@ export default function (args: Arguments, db: Database, onMessage: (msg: Message
             const v = (headers.authorization || '').trim();
             if (v !== authorization) throw new UnauthorizedError('Missing Authorization header');
         }
+
+        dbg(`Message body: ${JSON.stringify(body)}`);
 
         if (!isEnvelope(body)) throw new BadRequestError('Invalid message envelope');
 
