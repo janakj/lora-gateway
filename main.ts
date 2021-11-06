@@ -17,12 +17,9 @@ import Database from './db';
 import Message from './message';
 import { AsyncMqttClient } from 'async-mqtt';
 
-declare global {
-    let devMode: boolean;
-}
 
 const dbg = debug('lora:main');
-devMode = process.env.NODE_ENV === "development";
+const devMode = process.env.NODE_ENV === "development";
 
 const log = (msg: string) => process.stdout.write(msg);
 const err = (msg: string) => process.stderr.write(msg);
