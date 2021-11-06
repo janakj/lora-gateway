@@ -16,6 +16,7 @@
         "node": ">=16.0.0"
     },
     "dependencies": {
+        "@janakj/lib": "github:janakj/lib",
         "async-mqtt": "^2.6.1",
         "better-sqlite3": "^7.1.1",
         "command-line-args": "^5.2.0",

@@ -6,10 +6,11 @@ import { dirname } from 'path';
 import { AddressInfo } from 'net';
 import express from 'express';
 import { fileURLToPath } from 'url';
-import { promises as fs } from 'fs';
+import { chmodSync, promises as fs } from 'fs';
 import { fork } from 'child_process';
 
-import { abort, sleep } from './utils';
+import abort from '@janakj/lib/abort';
+import sleep from '@janakj/lib/sleep';
 import loadArguments from './args';
 import craApi from './cra';
 import Database from './db';
@@ -34,7 +35,7 @@ async function createHTTPSServer(app: express.Application, crtFilename: string, 
     args.cert = await fs.readFile(crtFilename);
 
     if (keyFilename === undefined) {
-        debug(`TLS private key filename not specified, trying to load the key from ${crtFilename}`)
+        debug(`TLS private key filename not specified, trying to load the key from ${crtFilename}`);
         keyFilename = crtFilename;
     }
 
@@ -88,13 +89,13 @@ async function startListening(server: http.Server | https.Server, sockAddr: any)
             if (sockAddr.address) args.host = sockAddr.address;
         }
 
-        server.listen(args, async () => {
+        server.listen(args, () => {
             const a = server.address();
             if (a === null) {
                 reject(new Error('The server has been closed'));
             } else {
                 try {
-                    if (typeof sockAddr === 'string') await fs.chmod(sockAddr, '666');
+                    if (typeof sockAddr === 'string') chmodSync(sockAddr, '666');
                     resolve(a);
                 } catch (e) {
                     reject(e);
@@ -106,9 +107,9 @@ async function startListening(server: http.Server | https.Server, sockAddr: any)
 
 
 function addrToString(addr: string | AddressInfo) {
-    if (typeof addr === 'string') return `unix:${addr}`
-    if (addr.family === 'IPv6') return `tcp:[${addr.address}]:${addr.port}`
-    return `tcp:${addr.address}:${addr.port}`
+    if (typeof addr === 'string') return `unix:${addr}`;
+    if (addr.family === 'IPv6') return `tcp:[${addr.address}]:${addr.port}`;
+    return `tcp:${addr.address}:${addr.port}`;
 }
 
 
@@ -136,7 +137,7 @@ function dropPrivileges(uid?: number, gid?: number) {
 
 class QueueManager {
     db: Database;
-    sink?: Function;
+    sink?: (msg: Message) => Promise<void> | void;
     running: Promise<void>;
 
     constructor(db: Database) {
@@ -154,7 +155,7 @@ class QueueManager {
         this.flush();
     }
 
-    setSink(f: Function) {
+    setSink(f: (msg: Message) => Promise<void> | void) {
         this.sink = f;
         this.flush();
     }
@@ -164,7 +165,7 @@ class QueueManager {
     }
 
     async _flush() {
-        if (typeof this.sink === 'undefined') return;
+        if (this.sink === undefined) return;
 
         try {
             await Promise.all(this.db.getMessages().map(async msg => {
@@ -193,7 +194,9 @@ class QueueManager {
         const mqtt = (await import('async-mqtt')).default;
         mqttClient = await mqtt.connectAsync(args.mqtt_broker);
 
-        queueMgr.setSink((msg: Message) => mqttClient.publish(`LoRa/${msg.eui}/message`, JSON.stringify(msg)));
+        queueMgr.setSink(async (msg: Message) => {
+            await mqttClient.publish(`LoRa/${msg.eui}/message`, JSON.stringify(msg));
+        });
         log('done.\n');
     }
 
@@ -202,14 +205,14 @@ class QueueManager {
 
     let server: http.Server | https.Server;
     if (args.tls_cert) {
-        server = await createHTTPSServer(app, args.tls_cert, args.tls_key)
+        server = await createHTTPSServer(app, args.tls_cert, args.tls_key);
     } else {
         log(`Setting up a HTTP server...`);
         server = createHTTPServer(app);
         log('done.\n');
     }
 
-    app.use('/cra.cz', await craApi(args, db, queueMgr.push));
+    app.use('/cra.cz', craApi(args, db, queueMgr.push));
 
     const addr = await startListening(server, args.listen);
     log(`HTTP${args.tls_cert ? 'S' : ''} server is listening on ${addrToString(addr)}\n`);

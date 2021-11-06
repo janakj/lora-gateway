@@ -25,7 +25,7 @@ export function decrypt(ciphertext: Buffer, devaddr: string, appskey: string, se
         if (left < 16) cipher.final();
 
         for (let j = 0; j < left; j++)
-        dst[i + j] = ciphertext[i + j] ^ block_s[j];
+            dst[i + j] = ciphertext[i + j] ^ block_s[j];
     }
 
     return dst;

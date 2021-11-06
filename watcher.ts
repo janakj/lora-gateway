@@ -2,11 +2,11 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import _ from 'lodash';
-import { parseNumber } from './utils';
+import { parseNumber } from '@janakj/lib/parse';
 import * as defaults from './defaults';
 
 
-export default function watch(filenames: string[] | string, send: Function) {
+export default function watch(filenames: string[] | string, send: (msg: any) => Promise<void>) {
     const interval = parseNumber(process.env.CERTIFICATE_CHECK_INTERVAL
         || defaults.CERTIFICATE_CHECK_INTERVAL, 1);
     const f = typeof filenames === 'string' ? [filenames] : _.uniq(filenames);
@@ -15,22 +15,24 @@ export default function watch(filenames: string[] | string, send: Function) {
     for(const filename of f)
         current[filename] = readFileSync(filename, 'hex');
 
-    setInterval(async () => {
-        for(const filename of f) {
-            try {
-                const data = readFileSync(filename, 'hex');
-                if (data !== current[filename]) {
-                    try {
-                        await send({ filename, data })
-                    } catch(e) {
-                        process.exit();
+    setInterval(function() {
+        void (async function() {
+            for(const filename of f) {
+                try {
+                    const data = readFileSync(filename, 'hex');
+                    if (data !== current[filename]) {
+                        try {
+                            await send({ filename, data });
+                        } catch(e) {
+                            process.exit();
+                        }
+                        current[filename] = data;
                     }
-                    current[filename] = data;
+                } catch(error: any) {
+                    process.stderr.write(`Error while reading ${filename}: ${error.message}`);
                 }
-            } catch(error: any) {
-                process.stderr.write(`Error while reading ${filename}: ${error.message}`);
             }
-        }
+        })();
     }, interval);
 }
 
@@ -42,7 +44,7 @@ function main() {
     if (!process.send)
         throw new Error('Bug: Parent process did not establish an IPC channel');
 
-    process.once('disconnect', () => { process.exit() });
+    process.once('disconnect', () => { process.exit(); });
 
     try {
         watch(process.argv.slice(2), promisify(process.send.bind(process)));

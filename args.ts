@@ -2,7 +2,7 @@ import debug from 'debug';
 import userid from 'userid';
 import parseCmdlineArgs from 'command-line-args';
 import { promises as fs } from 'fs';
-import { parseNumber } from './utils';
+import { parseNumber } from '@janakj/lib/parse';
 
 const dbg = debug('lora:args');
 
@@ -21,8 +21,8 @@ export interface Arguments {
     group?       : number;
     tls_key?     : string;
     listen       : string | SockAddr;
-    credentials? : Object;
-    networks     : Object;
+    credentials? : Record<string, any>;
+    networks     : Record<string, any>;
     user?        : number;
 }
 
@@ -89,7 +89,7 @@ async function loadConfig(filename: string) {
         return rv;
     } catch (e: any) {
         if (e.code !== 'ENOENT') throw e;
-        dbg(`Configuration file '${filename}' does not exist, skipping.`)
+        dbg(`Configuration file '${filename}' does not exist, skipping.`);
         return {};
     }
 }
@@ -169,7 +169,7 @@ export default async function loadArguments(): Promise<Arguments> {
     const names = cmdlineArgs.map(v => v.name);
     Object.keys(args).forEach(name => {
         if (names.indexOf(name) === -1) delete args[name];
-    })
+    });
 
     if (args.mqtt_broker === null)
         throw new Error("Missing 'mqtt_broker' parameter value");
@@ -190,7 +190,7 @@ export default async function loadArguments(): Promise<Arguments> {
         throw new Error("Missing 'listen' parameter value");
 
     if (typeof args.listen === 'undefined')
-        args.listen = { port: args.tls_cert ? 443 : 80 }
+        args.listen = { port: args.tls_cert ? 443 : 80 };
 
     args.credentials = parseCredentials(args.credentials);
     args.user = parseUser(args.user);

@@ -1,7 +1,7 @@
 import debug from 'debug';
 import express from 'express';
 import fetch from 'node-fetch';
-import { UnauthorizedError, NotFoundError, jsonify, BadRequestError } from './utils';
+import { UnauthorizedError, NotFoundError, jsonify, BadRequestError } from '@janakj/lib/http';
 import { decrypt } from './lora';
 import Database from './db';
 import Message from './message';
@@ -97,11 +97,11 @@ class API {
         this.username = username;
         this.password = password;
         this.tenantId = tenantId;
-    };
+    }
 
     async postJSON(path: string, body: any) {
-        const headers: any = { 'Content-Type': 'application/json' }
-        if (this.sessionId) headers.sessionId = this.sessionId
+        const headers: any = { 'Content-Type': 'application/json' };
+        if (this.sessionId) headers.sessionId = this.sessionId;
 
         const res = await fetch(`${API_BASE}/${path}`, {
             method: 'POST',
@@ -117,7 +117,7 @@ class API {
 
         const data = await res.json() as any;
         if (typeof data !== 'object' || typeof data.code !== 'number')
-            throw new Error(`Got invalid response from the API endpoint ${path}`)
+            throw new Error(`Got invalid response from the API endpoint ${path}`);
 
         if (data.code < 200 || data.code > 299)
             throw new Error(`API request failed: ${data.message}`);
@@ -175,17 +175,17 @@ class API {
 class Puller {
     api      : API;
     interval : number;
-    callback : Function;
+    callback : (msg: any) => Promise<any>;
     db       : Database;
 
-    constructor(api: API, db: Database, interval: number, callback: Function) {
+    constructor(api: API, db: Database, interval: number, callback: (msg: CraMessage) => Promise<void>) {
         this.api = api;
         this.interval = interval;
         this.callback = callback;
         this.db = db;
 
         this.fetch = this.fetch.bind(this);
-        this.fetch();
+        void this.fetch();
     }
 
     async fetch() {
@@ -208,12 +208,13 @@ class Puller {
         } catch (error: any) {
             err(`Error while fetching messages from cra.cz: ${error.message}\n`);
         }
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises
         setTimeout(this.fetch, this.interval);
     }
 }
 
 
-export default async function (args: Arguments, db: Database, onMessage: (msg: Message) => void) {
+export default function (args: Arguments, db: Database, onMessage: (msg: Message) => void | Promise<void>) {
     const netId = 'cra.cz';
 
     async function processMessage(src: CraMessage) {
@@ -240,7 +241,7 @@ export default async function (args: Arguments, db: Database, onMessage: (msg: M
             data = Buffer.from(src.data, 'hex');
             encrypted = false;
         } else {
-            throw new Error('Missing payload')
+            throw new Error('Missing payload');
         }
 
         // Submit the message to upper layers. Construct a unique message id from
@@ -254,7 +255,7 @@ export default async function (args: Arguments, db: Database, onMessage: (msg: M
             data      : data.toString('base64'),
             origin    : JSON.parse(JSON.stringify(src)),
             encrypted
-        } as Message)
+        } as Message);
     }
 
     const network = (args.networks as any || {})[netId];
@@ -284,7 +285,7 @@ export default async function (args: Arguments, db: Database, onMessage: (msg: M
         try {
             msg = JSON.parse(body.data);
         } catch (error) {
-            throw new BadRequestError("Invalid message representation (JSON expected)")
+            throw new BadRequestError("Invalid message representation (JSON expected)");
         }
 
         if (typeof msg !== 'object' || !isCraMessage(msg))
@@ -295,8 +296,8 @@ export default async function (args: Arguments, db: Database, onMessage: (msg: M
     }));
 
     api.get('*', jsonify(() => {
-        throw new NotFoundError("Not Found")
+        throw new NotFoundError("Not Found");
     }));
 
     return api;
-};
+}
