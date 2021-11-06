@@ -80,6 +80,11 @@ function isCraMessage(arg: any): arg is CraMessage {
 }
 
 
+function isPing(arg: any) {
+    return arg.cmd === 'rx' && arg.EUI === 'PING'
+}
+
+
 function isEnvelope(arg: any): arg is Envelope {
     return arg.type === "D" &&
         typeof arg.data === "string" &&
@@ -280,6 +285,11 @@ export default function (args: Arguments, db: Database, onMessage: (msg: Message
         }
 
         dbg(`Message body: ${JSON.stringify(body)}`);
+
+        if (isPing(body)) {
+            res.status(200).end();
+            return;
+        }
 
         if (!isEnvelope(body)) throw new BadRequestError('Invalid message envelope');
 
