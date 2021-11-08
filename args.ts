@@ -28,8 +28,8 @@ export interface Arguments {
 
 
 const defaults = {
-    config : '/usr/local/etc/lora-endpoint.json',
-    db     : '/var/local/lora-endpoint/state.db'
+    config : '/usr/local/etc/lora-gateway.json',
+    db     : '/var/local/lora-gateway/state.db'
 };
 
 
