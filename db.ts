@@ -2,8 +2,43 @@ import { mkdirSync, chmodSync } from 'fs';
 import { dirname } from 'path';
 import Sqlite from 'better-sqlite3';
 import Message from './message';
+import debug from 'debug';
 
-export default class Database {
+const dbg = debug('lora:db');
+
+
+export default abstract class Database {
+    abstract isSeen(id: string): boolean | Promise<boolean>;
+    abstract setSeen(id: string): void | Promise<void>;
+
+    abstract get(name: string): string | undefined | Promise<string | undefined>;
+    abstract set(name: string, value?: string): void | Promise<void>;
+
+    abstract enqueue(msg: Message): void | Promise<void>;
+    abstract dequeue(msg: Message): void | Promise<void>;
+    abstract getMessages(): Message[] | Promise<Message[]>;
+
+    static create(url: string): Database {
+        const sep = url.indexOf(':');
+        if (sep === -1) throw new Error(`Mising database URL scheme`);
+
+        const scheme = url.toLowerCase().slice(0, sep);
+        const body = url.slice(sep + 1);
+
+        switch(scheme) {
+            case 'sqlite':
+                return new SQLiteDatabase(body);
+                break;
+
+            default:
+                throw new Error(`Unsupported database scheme ${scheme}`);
+        }
+    }
+
+}
+
+
+class SQLiteDatabase extends Database {
     db          : Sqlite.Database;
     seenSelect  : Sqlite.Statement;
     seenInsert  : Sqlite.Statement;
@@ -14,6 +49,9 @@ export default class Database {
     queueSelect : Sqlite.Statement;
 
     constructor(filename: string) {
+        super();
+        dbg(`Opening SQLite database ${filename}`);
+
         // Create the directory for database files. Set the permissions to 1777
         // to make sure that we can create files in the directory after dropping
         // privileges (switching users). The directory will have the same
@@ -63,7 +101,8 @@ export default class Database {
     }
 
     get(name: string) {
-        return (this.attrSelect.get(name) || {}).value;
+        const v: string | null | undefined = (this.attrSelect.get(name) || {}).value;
+        return v === null ? undefined : v;
     }
 
     set(name: string, value?: string) {

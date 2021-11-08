@@ -144,11 +144,11 @@ class QueueManager {
         this.running = Promise.resolve();
     }
 
-    push(msg: Message) {
+    async push(msg: Message) {
         if (this.db.isSeen(msg.id)) return;
-        this.db.setSeen(msg.id);
+        await this.db.setSeen(msg.id);
 
-        this.db.enqueue(msg);
+        await this.db.enqueue(msg);
         this.flush();
     }
 
@@ -165,10 +165,10 @@ class QueueManager {
         if (this.sink === undefined) return;
 
         try {
-            await Promise.all(this.db.getMessages().map(async msg => {
+            await Promise.all((await this.db.getMessages()).map(async msg => {
                 if (this.sink) {
                     await this.sink(msg);
-                    this.db.dequeue(msg);
+                    await this.db.dequeue(msg);
                 }
             }));
         } catch (error) {
@@ -182,7 +182,7 @@ class QueueManager {
 (async () => {
     log(`Starting in ${devMode ? 'development' : 'production'} mode\n`);
     const args = await loadArguments();
-    const db = new Database(args.db);
+    const db = Database.create(args.db);
     const queueMgr = new QueueManager(db);
 
     let mqttClient: AsyncMqttClient;

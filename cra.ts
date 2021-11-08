@@ -196,7 +196,7 @@ class Puller {
     async fetch() {
         const now = new Date();
 
-        const value = this.db.get('timestamp');
+        const value = await this.db.get('timestamp');
         const timestamp = value ? new Date(value) : undefined;
 
         try {
@@ -206,7 +206,7 @@ class Puller {
                 await Promise.all(lst.map(m => this.callback(m)));
                 // Update the timestamp of the most recently fetched message only after
                 // we have successfully submitted all of them.
-                this.db.set('timestamp', now.toISOString());
+                await this.db.set('timestamp', now.toISOString());
             } catch (error: any) {
                 err(`Error while processing messages: ${error.message}\n`);
             }

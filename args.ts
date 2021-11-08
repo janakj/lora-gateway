@@ -29,7 +29,7 @@ export interface Arguments {
 
 const defaults = {
     config : '/usr/local/etc/lora-gateway.json',
-    db     : '/var/local/lora-gateway/state.db'
+    db     : 'sqlite:/var/local/lora-gateway/state.db'
 };
 
 
