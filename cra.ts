@@ -81,7 +81,7 @@ function isCraMessage(arg: any): arg is CraMessage {
 
 
 function isPing(arg: any) {
-    return arg.cmd === 'rx' && arg.EUI === 'PING'
+    return arg.cmd === 'rx' && arg.EUI === 'PING';
 }
 
 
