@@ -145,7 +145,7 @@ class QueueManager {
     }
 
     async push(msg: Message) {
-        if (this.db.isSeen(msg.id)) return;
+        if (await this.db.isSeen(msg.id)) return;
         await this.db.setSeen(msg.id);
 
         await this.db.enqueue(msg);

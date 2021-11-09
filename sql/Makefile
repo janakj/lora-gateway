@@ -1,4 +1,4 @@
-db_ssh ?= dbj
+db_ssh ?= pgsql_host
 db_name ?= lora
 
 all: schema data

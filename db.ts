@@ -1,8 +1,10 @@
+import { readFileSync } from 'fs';
 import { mkdirSync, chmodSync } from 'fs';
 import { dirname } from 'path';
 import Sqlite from 'better-sqlite3';
 import Message from './message';
 import debug from 'debug';
+import pg from 'pg';
 
 const dbg = debug('lora:db');
 
@@ -26,15 +28,107 @@ export default abstract class Database {
         const body = url.slice(sep + 1);
 
         switch(scheme) {
-            case 'sqlite':
-                return new SQLiteDatabase(body);
-                break;
+            case 'sqlite':     return new SQLiteDatabase(body);
+            case 'postgresql': return new PostgresSQLDatabase(body);
+            default:           throw new Error(`Unsupported database scheme ${scheme}`);
+        }
+    }
+}
 
-            default:
-                throw new Error(`Unsupported database scheme ${scheme}`);
+
+class PostgresSQLDatabase extends Database {
+    pool?: pg.Pool;
+
+    constructor(filename: string) {
+        super();
+        dbg(`Loading PostgreSQL credentials from ${filename}`);
+
+        let credentials: Record<string, string> | undefined;
+        try {
+            const data = readFileSync(filename, 'utf-8');
+            try {
+                credentials = JSON.parse(data);
+                if (typeof credentials !== 'object')
+                    throw new Error('Database credentials must be an object');
+            } catch(error) {
+                throw new Error('Unsupported format of database credentials (JSON expected)');
+            }
+        } catch(error) {
+            throw new Error(`Could not read file ${filename}: ${error}`);
+        }
+        
+        this.pool = new pg.Pool({
+            user     : credentials.user,
+            host     : credentials.host,
+            database : credentials.dbname,
+            ssl: {
+                rejectUnauthorized: true,
+                ca   : credentials.sslrootcert,
+                key  : credentials.sslkey,
+                cert : credentials.sslcert,
+            },
+        });
+    }
+
+    private async withDB<T>(cb: (client: pg.PoolClient) => Promise<T>) {
+        const client = await this.pool!.connect();
+        try {
+            return await cb(client);
+        } finally {
+            client.release();
         }
     }
 
+    async isSeen(id: string) {
+        return this.withDB(async (client) => {
+            const { rowCount } = await client.query('select * from seen where id=$1', [ id ]);
+            return rowCount !== 0;
+        });
+    }
+
+    async setSeen(id: string) {
+        return this.withDB(async (client) => {
+            await client.query('insert into seen (id) values ($1)', [ id ]);
+        });
+    }
+
+    async get(name: string) {
+        return this.withDB(async (client) => {
+            const { rows, rowCount } = await client.query('select value from attrs where name=$1', [ name ]);
+            if (rowCount !== 1) return undefined;
+            const { value } = rows[0];
+            if (value === undefined || value === null) return undefined;
+            return value as string;
+        });
+    }
+
+    async set(name: string, value?: string) {
+        return this.withDB(async (client) => {
+            await client.query(`
+                insert into attrs (name, value) values ($1, $2)
+                on conflict (name) do update set value=$2`, [ name, value ]);
+        });
+    }
+
+    async enqueue(msg: Message) {
+        return this.withDB(async (client) => {
+            await client.query('insert into queue (message_id, message) values ($1, $2::jsonb)',
+                [ msg.id, msg ]);
+        });
+    }
+
+    async dequeue(msg: Message) {
+        return this.withDB(async (client) => {
+            await client.query('delete from queue where message_id=$1', [ msg.id ]);
+        });
+    }
+
+    async getMessages() {
+        return this.withDB(async (client) => {
+            const { rows } = await client.query('select message::jsonb from queue');
+            return rows.map(row => row.message as Message);
+        });
+    }
 }
 
 

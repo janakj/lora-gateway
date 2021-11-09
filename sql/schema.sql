@@ -5,7 +5,7 @@
 -- Dumped from database version 13.4 (Debian 13.4-0+deb11u1)
 -- Dumped by pg_dump version 13.4 (Debian 13.4-0+deb11u1)
 
--- Started on 2021-11-08 12:16:21 UTC
+-- Started on 2021-11-09 07:23:01 UTC
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -66,7 +66,7 @@ ALTER TABLE public.attrs OWNER TO postgres;
 CREATE TABLE public.queue (
     id integer NOT NULL,
     message_id text NOT NULL,
-    message text NOT NULL
+    message jsonb NOT NULL
 );
 
 
@@ -89,7 +89,7 @@ CREATE SEQUENCE public.queue_id_seq
 ALTER TABLE public.queue_id_seq OWNER TO postgres;
 
 --
--- TOC entry 3004 (class 0 OID 0)
+-- TOC entry 3006 (class 0 OID 0)
 -- Dependencies: 202
 -- Name: queue_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -150,7 +150,43 @@ CREATE UNIQUE INDEX queue_index ON public.queue USING btree (message_id);
 CREATE UNIQUE INDEX seen_index ON public.seen USING btree (id);
 
 
--- Completed on 2021-11-08 12:16:21 UTC
+--
+-- TOC entry 3004 (class 0 OID 0)
+-- Dependencies: 201
+-- Name: TABLE attrs; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.attrs TO "lora-gateway";
+
+
+--
+-- TOC entry 3005 (class 0 OID 0)
+-- Dependencies: 203
+-- Name: TABLE queue; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.queue TO "lora-gateway";
+
+
+--
+-- TOC entry 3007 (class 0 OID 0)
+-- Dependencies: 202
+-- Name: SEQUENCE queue_id_seq; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT USAGE ON SEQUENCE public.queue_id_seq TO "lora-gateway";
+
+
+--
+-- TOC entry 3008 (class 0 OID 0)
+-- Dependencies: 200
+-- Name: TABLE seen; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.seen TO "lora-gateway";
+
+
+-- Completed on 2021-11-09 07:23:01 UTC
 
 --
 -- PostgreSQL database dump complete

@@ -161,8 +161,8 @@ class API {
     async getMessages(since?: Date | string | number, until?: Date | string | number): Promise<object[]> {
         let dateFrom, dateTo;
 
-        if (typeof since !== 'undefined') dateFrom = new Date(since).toISOString();
-        if (typeof until !== 'undefined') dateTo = new Date(until).toISOString();
+        if (since !== undefined) dateFrom = new Date(since).toISOString();
+        if (until !== undefined) dateTo = new Date(until).toISOString();
 
         const res = await this.postJSONAuth('MessageStoreQuery', {
             sync: true,
@@ -200,8 +200,9 @@ class Puller {
         const timestamp = value ? new Date(value) : undefined;
 
         try {
+            dbg(`Fetching messages between ${timestamp} and ${now} for tenant ${this.api.tenantId}`);
             const lst = await this.api.getMessages(timestamp, now);
-            if (lst) dbg(`Fetched ${lst.length} message(s) from the network cra.cz`);
+            if (lst) dbg(`Fetched ${lst.length} message(s)`);
             try {
                 await Promise.all(lst.map(m => this.callback(m)));
                 // Update the timestamp of the most recently fetched message only after
@@ -211,7 +212,7 @@ class Puller {
                 err(`Error while processing messages: ${error.message}\n`);
             }
         } catch (error: any) {
-            err(`Error while fetching messages from cra.cz: ${error.message}\n`);
+            err(`Error while fetching messages: ${error.message}\n`);
         }
         // eslint-disable-next-line @typescript-eslint/no-misused-promises
         setTimeout(this.fetch, this.interval);
