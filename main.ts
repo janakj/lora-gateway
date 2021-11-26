@@ -13,6 +13,7 @@ import abort from '@janakj/lib/abort';
 import sleep from '@janakj/lib/sleep';
 import loadArguments from './args';
 import craApi from './cra';
+import ttnApi from './ttn';
 import Database from './db';
 import Message from './message';
 import { AsyncMqttClient } from 'async-mqtt';
@@ -210,6 +211,7 @@ class QueueManager {
     }
 
     app.use('/cra.cz', craApi(args, db, queueMgr.push));
+    app.use('/ttn', ttnApi(args, db, queueMgr.push));
 
     const addr = await startListening(server, args.listen);
     log(`HTTP${args.tls_cert ? 'S' : ''} server is listening on ${addrToString(addr)}\n`);

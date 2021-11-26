@@ -46,8 +46,21 @@ export interface CraNetworkConfig extends NetworkConfig {
 }
 
 
+export interface TtnNetworkConfig extends NetworkConfig {
+    type: 'ttn',
+    push?: {
+        authorization: string
+    }
+}
+
+
 export function isCraNetworkConfig(value: NetworkConfig): value is CraNetworkConfig {
     return value.type === 'cra.cz';
+}
+
+
+export function isTtnNetworkConfig(value: NetworkConfig): value is TtnNetworkConfig {
+    return value.type === 'ttn';
 }
 
 
