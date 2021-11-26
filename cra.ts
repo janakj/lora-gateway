@@ -5,9 +5,10 @@ import { UnauthorizedError, NotFoundError, jsonify, BadRequestError } from '@jan
 import { decrypt } from './lora';
 import Database from './db';
 import Message from './message';
-import { Arguments } from './args';
+import { Arguments, NetworkConfig, CraNetworkConfig, isCraNetworkConfig } from './args';
 
-const dbg = debug('lora:cra');
+const type = 'cra.cz';
+const dbg = debug('lora:cra.cz');
 
 const EUI_REGEX = /[0-9A-F]{16}/,
     API_BASE = 'https://api.iot.cra.cz/cxf/IOTServices/v2';
@@ -178,16 +179,22 @@ class API {
 
 
 class Puller {
+    name     : string;
     api      : API;
     interval : number;
     callback : (msg: any) => Promise<any>;
     db       : Database;
+    dbg      : (msg: string) => void;
+    err      : (msg: string) => void;
 
-    constructor(api: API, db: Database, interval: number, callback: (msg: CraMessage) => Promise<void>) {
+    constructor(name: string, api: API, db: Database, interval: number, callback: (msg: CraMessage) => Promise<void>) {
+        this.name = name;
         this.api = api;
         this.interval = interval;
         this.callback = callback;
         this.db = db;
+        this.dbg = dbg.extend(name);
+        this.err = msg => err(`${name}: ${msg}`);
 
         this.fetch = this.fetch.bind(this);
         void this.fetch();
@@ -200,19 +207,19 @@ class Puller {
         const timestamp = value ? new Date(value) : undefined;
 
         try {
-            dbg(`Fetching messages between ${timestamp} and ${now} for tenant ${this.api.tenantId}`);
+            this.dbg(`Fetching messages between ${timestamp} and ${now} for tenant ${this.api.tenantId}`);
             const lst = await this.api.getMessages(timestamp, now);
-            if (lst) dbg(`Fetched ${lst.length} message(s)`);
+            if (lst) this.dbg(`Fetched ${lst.length} message(s)`);
             try {
                 await Promise.all(lst.map(m => this.callback(m)));
                 // Update the timestamp of the most recently fetched message only after
                 // we have successfully submitted all of them.
                 await this.db.set('timestamp', now.toISOString());
             } catch (error: any) {
-                err(`Error while processing messages: ${error.message}\n`);
+                this.err(`Error while processing messages: ${error.message}\n`);
             }
         } catch (error: any) {
-            err(`Error while fetching messages: ${error.message}\n`);
+            this.err(`Error while fetching messages: ${error.message}\n`);
         }
         // eslint-disable-next-line @typescript-eslint/no-misused-promises
         setTimeout(this.fetch, this.interval);
@@ -221,8 +228,6 @@ class Puller {
 
 
 export default function (args: Arguments, db: Database, onMessage: (msg: Message) => void | Promise<void>) {
-    const netId = 'cra.cz';
-
     async function processMessage(src: CraMessage) {
         let data, encrypted;
 
@@ -254,7 +259,7 @@ export default function (args: Arguments, db: Database, onMessage: (msg: Message
         // the string that uniquely identifies the network, the sequence number and
         // timestamp assigned to the message by the network server.
         await onMessage({
-            id        : `${netId}:${src.ts}:${src.seqno}`,
+            id        : `${type}:${src.ts}:${src.seqno}`,
             eui       : src.EUI,
             timestamp : new Date(src.ts).toISOString(),
             received  : new Date().toISOString(),
@@ -264,28 +269,41 @@ export default function (args: Arguments, db: Database, onMessage: (msg: Message
         } as Message);
     }
 
-    const network = (args.networks as any || {})[netId];
+    const networks: Record<string, CraNetworkConfig> = JSON.parse(JSON.stringify(args.networks));
+    Object.entries<NetworkConfig>(networks).forEach(([name, value]) => {
+        if (!isCraNetworkConfig(value)) delete networks[name];
+    });
 
-    const { interval, username, password, tenantId } = network.pull || {};
-    if (username && password && tenantId) {
-        dbg(`Starting message puller for network ${netId} as user ${username}`);
-        new Puller(new API(username, password, tenantId), db, (interval || 60) * 1000, processMessage);
-    } else {
-        dbg(`NOT starting message puller for network ${netId} (missing credentials)`);
+    const pullers: Puller[] = [];
+
+    for(const [name, network] of Object.entries(networks)) {
+        const { interval, username, password, tenantId } = network.pull || {};
+        if (username && password && tenantId) {
+            dbg(`Starting message puller for network ${type}:${name} as user ${username}`);
+            pullers.push(new Puller(name, new API(username, password, tenantId), db, (interval || 60) * 1000, processMessage));
+        } else {
+            dbg(`NOT starting message puller for network ${type}:${name} (missing credentials)`);
+        }
     }
 
     const api = express.Router();
     api.use(express.json());
 
-    const { authorization } = network.push || {};
+    api.post('/:name', jsonify(async ({ body, headers, params }, res) => {
+        const network = networks[params.name];
+        if (network === undefined)
+            throw new NotFoundError(`Unknown network name`);
 
-    api.post('/', jsonify(async ({ body, headers }, res) => {
+        const { authorization } = network.push || {};
+
         if (authorization) {
             const v = (headers.authorization || '').trim();
             if (v !== authorization) throw new UnauthorizedError('Missing Authorization header');
         }
 
-        dbg(`Message body: ${JSON.stringify(body)}`);
+        const dbg_ = dbg.extend(params.name);
+
+        dbg_(`Message body: ${JSON.stringify(body)}`);
 
         if (isPing(body)) {
             res.status(200).end();

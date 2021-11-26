@@ -27,6 +27,30 @@ export interface Arguments {
 }
 
 
+export interface NetworkConfig {
+    type: string;
+}
+
+
+export interface CraNetworkConfig extends NetworkConfig {
+    type: 'cra.cz',
+    push?: {
+        authorization: string
+    },
+    pull?: {
+        interval?: number;
+        username: string;
+        password: string;
+        tenantId: string;
+    }
+}
+
+
+export function isCraNetworkConfig(value: NetworkConfig): value is CraNetworkConfig {
+    return value.type === 'cra.cz';
+}
+
+
 const defaults = {
     config : '/usr/local/etc/lora-gateway.json',
     db     : 'sqlite:/var/local/lora-gateway/state.db'
