@@ -11,7 +11,12 @@ const type = 'cra.cz';
 const dbg = debug('lora:cra.cz');
 
 const EUI_REGEX = /[0-9A-F]{16}/,
-    API_BASE = 'https://api.iot.cra.cz/cxf/IOTServices/v2';
+    API_BASE = 'https://api.iot.cra.cz/cxf/api/v1',
+    TOKEN_URL = 'https://sso.cra.cz/auth/realms/CRA/protocol/openid-connect/token',
+    CLIENT_ID = 'iot-api-client',
+    CLIENT_SECRET = '41a113b7-5486-45e3-8a3d-e0b106a5d446',
+    FROM_EPOCH = '2020';
+
 
 const err = (msg: string) => process.stderr.write(msg);
 
@@ -63,7 +68,7 @@ function isCraMessage(arg: any): arg is CraMessage {
         typeof arg.dr === 'string' &&
         typeof arg.ack === 'boolean' &&
         Array.isArray(arg.gws) && arg.gws.length >= 1 &&
-        typeof arg.bat === 'number' && arg.bat > 0 && arg.bat <= 255;
+        typeof arg.bat === 'number';
 
     if (!rv) return false;
 
@@ -94,25 +99,63 @@ function isEnvelope(arg: any): arg is Envelope {
 
 
 class API {
-    username   : string;
-    password   : string;
-    tenantId   : string;
-    sessionId? : string;
+    username     : string;
+    password     : string;
+    accessToken? : string;
 
-    constructor(username: string, password: string, tenantId: string) {
+    constructor(username: string, password: string) {
         this.username = username;
         this.password = password;
-        this.tenantId = tenantId;
     }
 
-    async postJSON(path: string, body: any) {
-        const headers: any = { 'Content-Type': 'application/json' };
-        if (this.sessionId) headers.sessionId = this.sessionId;
+    async requestJSON(path: string, method: string, body?: string, headers: object = {}) {
+        const hdr: any = {...headers};
+        if (this.accessToken) hdr.Authorization = `Bearer ${this.accessToken}`;
 
-        const res = await fetch(`${API_BASE}/${path}`, {
+        const req: any = { method, headers: hdr };
+        if (body !== undefined) req.body = body;
+        const res = await fetch(`${API_BASE}/${path}`, req);
+
+        if (!res.ok) {
+            let msg;
+            try {
+                msg = `${(await res.json() as any).errors}`;
+            } catch (error: any ) {
+                msg = res.statusText;
+            }
+
+            const error: any = new Error(msg);
+            error.code = res.status;
+        
+            throw error;
+        }
+
+        const data = await res.json() as any;
+        if (typeof data !== 'object')
+            throw new Error(`Got invalid response from the API endpoint ${path}`);
+
+        if (data.status !== "success")
+            throw new Error(`API error ${data.code}: ${data.errors}`);
+
+        return data;
+    }
+
+    async getAccessToken() {
+        delete this.accessToken;
+
+        dbg(`Obtaining access token for ${this.username}`);
+        const res = await fetch(TOKEN_URL, {
             method: 'POST',
-            headers,
-            body: JSON.stringify(body)
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+                username      : this.username,
+                password      : this.password,
+                grant_type    : 'password',
+                client_id     : CLIENT_ID,
+                client_secret : CLIENT_SECRET
+            })
         });
 
         if (!res.ok) {
@@ -122,58 +165,74 @@ class API {
         }
 
         const data = await res.json() as any;
-        if (typeof data !== 'object' || typeof data.code !== 'number')
-            throw new Error(`Got invalid response from the API endpoint ${path}`);
+        if (typeof data !== 'object' || typeof data.access_token !== 'string')
+            throw new Error(`Got invalid access token response`);
 
-        if (data.code < 200 || data.code > 299)
-            throw new Error(`API request failed: ${data.message}`);
-
-        return data;
+        this.accessToken = data.access_token;
     }
 
-    async login() {
-        delete this.sessionId;
-
-        const res = await this.postJSON('Login', {
-            username: this.username,
-            password: this.password
-        });
-
-        if (typeof res.sessionId !== 'string')
-            throw new Error(`Invalid response from the Login API`);
-
-        this.sessionId = res.sessionId;
-    }
-
-    async postJSONAuth(path: string, body: any) {
+    async requestJSONAuth(path: string, method: string, body?: string, headers: object = {}) {
         let res;
 
         try {
-            res = await this.postJSON(path, body);
+            res = await this.requestJSON(path, method, body, headers);
         } catch (error: any) {
             if (error.code !== 401) throw error;
-            await this.login();
-            res = await this.postJSON(path, body);
+            await this.getAccessToken();
+            res = await this.requestJSON(path, method, body, headers);
         }
 
         return res;
     }
 
-    async getMessages(since?: Date | string | number, until?: Date | string | number): Promise<object[]> {
-        let dateFrom, dateTo;
+    async getDevices(): Promise<object[]> {
+        const res = await this.requestJSONAuth('lora/devices', 'GET');
+        return res.data || [];
+    }
 
-        if (since !== undefined) dateFrom = new Date(since).toISOString();
-        if (until !== undefined) dateTo = new Date(until).toISOString();
+    async getMessages(device: string, from: Date | string | number, to: Date | string | number): Promise<object[]> {
+        /* The new CRA API has a couple of peculiarities:
+         * 1) It requires from and to timestamps, they are no longer optional;
+         * 2) The two timestamps must be less than 31 days apart;
+         * 3) It can send at most 1000 meessages at once.
+         *
+         * This makes the implementation of this function a bit more
+         * complicated. We need to iterate over the time range in 30-day
+         * increments and we need to download messages in 1000-message chunks.
+         */
+        let messages: object[] = [];
+        const message_limit = 1000;
+        const day_limit = 30;
 
-        const res = await this.postJSONAuth('MessageStoreQuery', {
-            sync: true,
-            criteria: {
-                tenantId: this.tenantId,
-                ...(dateFrom && { dateFrom }),
-                ...(dateTo && { dateTo })
+        const params = new URLSearchParams();
+        params.set('limit', `${message_limit}`);
+        from = new Date(from);
+        to = new Date(to);
+
+        let deadline = new Date(from);
+        for(;;) {
+            deadline.setDate(deadline.getDate() + day_limit);
+            if (deadline > to) deadline = to;
+
+            params.set('from', from.toISOString());
+            params.set('to', deadline.toISOString());
+            dbg(`${from.toISOString()} ${deadline.toISOString()} ${to.toISOString()}`);
+
+            let offset = 0;
+            for(;;) {
+                params.set('offset', `${offset}`);
+                const res = await this.requestJSONAuth(`lora/devices/${device}/up/messages?${params}`, 'GET');
+                if (!Array.isArray(res.data)) break;
+                messages = messages.concat(res.data.map((m: any) => m.message));
+                if (res.data.length < message_limit) break;
+                offset += res.data.length;
             }
-        });
-        return (res.data || []).map((msg: string) => JSON.parse(msg));
+
+            if (deadline >= to) break;
+            from = new Date(deadline);
+            from.setMilliseconds(from.getMilliseconds() + 1);
+        }
+        return messages;
     }
 }
 
@@ -202,21 +261,27 @@ class Puller {
 
     async fetch() {
         const now = new Date();
-
-        const value = await this.db.get('timestamp');
-        const timestamp = value ? new Date(value) : undefined;
+        const timestamp = await this.db.get('timestamp');
+        const since = new Date(timestamp !== undefined ? timestamp : FROM_EPOCH);
 
         try {
-            this.dbg(`Fetching messages between ${timestamp} and ${now} for tenant ${this.api.tenantId}`);
-            const lst = await this.api.getMessages(timestamp, now);
-            if (lst) this.dbg(`Fetched ${lst.length} message(s)`);
+            this.dbg(`Listing LoRa devices for ${this.api.username}`);
+            const devices: string[] = (await this.api.getDevices()).map((d: any) => d.deviceId);
+
+            let current = '<none>';
             try {
-                await Promise.all(lst.map(m => this.callback(m)));
+                for(const device of devices) {
+                    current = device;
+                    this.dbg(`Fetching messages between ${since.toISOString()} and ${now.toISOString()} from device ${device}`);
+                    const lst = await this.api.getMessages(device, since, now);    
+                    if (lst) this.dbg(`Fetched ${lst.length} message(s)`);
+                    await Promise.all(lst.map(m => this.callback(m)));
+                }
                 // Update the timestamp of the most recently fetched message only after
                 // we have successfully submitted all of them.
                 await this.db.set('timestamp', now.toISOString());
             } catch (error: any) {
-                this.err(`Error while processing messages: ${error.message}\n`);
+                this.err(`Error while processing messages from device ${current}: ${error.message}\n`);
             }
         } catch (error: any) {
             this.err(`Error while fetching messages: ${error.message}\n`);
@@ -252,7 +317,7 @@ export default function (args: Arguments, db: Database, onMessage: (msg: Message
             data = Buffer.from(src.data, 'hex');
             encrypted = false;
         } else {
-            throw new Error('Missing payload');
+            throw new Error(`Missing payload in seqno ${src.seqno} from EUI ${src.EUI}`);
         }
 
         // Submit the message to upper layers. Construct a unique message id from
@@ -277,10 +342,10 @@ export default function (args: Arguments, db: Database, onMessage: (msg: Message
     const pullers: Puller[] = [];
 
     for(const [name, network] of Object.entries(networks)) {
-        const { interval, username, password, tenantId } = network.pull || {};
-        if (username && password && tenantId) {
+        const { interval, username, password } = network.pull || {};
+        if (username && password) {
             dbg(`Starting message puller for network ${type}:${name} as user ${username}`);
-            pullers.push(new Puller(name, new API(username, password, tenantId), db, (interval || 60) * 1000, processMessage));
+            pullers.push(new Puller(name, new API(username, password), db, (interval || 60) * 1000, processMessage));
         } else {
             dbg(`NOT starting message puller for network ${type}:${name} (missing credentials)`);
         }
