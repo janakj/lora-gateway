@@ -9,7 +9,7 @@ Restart=always
 RestartSec=5
 WorkingDirectory=/usr/local/src/lora-gateway
 Environment=DEBUG=lora*
-ExecStart=node --title=lora-gateway --es-module-specifier-resolution=node dist/main.js --listen /run/lora-gateway.sock --mqtt_broker mqtt://localhost --user lora-gateway --group lora-gateway
+ExecStart=node --title=lora-gateway dist/main.js --listen /run/lora-gateway.sock --mqtt_broker mqtt://localhost --user lora-gateway --group lora-gateway
 
 [Install]
 WantedBy=multi-user.target

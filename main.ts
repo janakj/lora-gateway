@@ -1,13 +1,9 @@
 import http, { createServer as createHTTPServer } from 'http';
-import https from 'https';
 import debug from 'debug';
 import morgan from 'morgan';
-import { dirname } from 'path';
 import { AddressInfo } from 'net';
 import express from 'express';
-import { fileURLToPath } from 'url';
 import { chmodSync, promises as fs } from 'fs';
-import { fork } from 'child_process';
 
 import abort from '@janakj/lib/abort';
 import sleep from '@janakj/lib/sleep';
@@ -23,52 +19,9 @@ const dbg = debug('lora:main');
 const devMode = process.env.NODE_ENV === "development";
 
 const log = (msg: string) => process.stdout.write(msg);
-const err = (msg: string) => process.stderr.write(msg);
 
 
-async function createHTTPSServer(app: express.Application, crtFilename: string, keyFilename?: string) {
-    const args: https.ServerOptions = {};
-
-    debug(`Loading TLS server certificate from file '${crtFilename}'`);
-    args.cert = await fs.readFile(crtFilename);
-
-    if (keyFilename === undefined) {
-        debug(`TLS private key filename not specified, trying to load the key from ${crtFilename}`);
-        keyFilename = crtFilename;
-    }
-
-    debug(`Loading TLS private key from file '${keyFilename}'`);
-    args.key = await fs.readFile(keyFilename);
-
-    const server = https.createServer(args, app);
-    const { context } = (server as any)._sharedCreds;
-
-    // If we drop privileges later, we will most likely lose access to the TLS
-    // certificate and key files. Spawn a helper child process that will keep
-    // running under current user (before dropping privileges) and that will
-    // re-read the files for us whenever they change.
-
-    const dir = dirname(fileURLToPath(import.meta.url));
-    const watcher = fork(`${dir}/watcher.js`, [crtFilename, keyFilename], { cwd: '/' });
-    watcher.on('disconnect', abort);
-    watcher.on('message', ({ filename, data }: any) => {
-        if (data === null) return;
-        dbg(`Reloading TLS credentials from '${filename}'`);
-
-        try {
-            const contents = Buffer.from(data, 'base64');
-            if (filename === crtFilename) context.setCert(contents);
-            if (filename === keyFilename) context.setKey(contents);
-        } catch (error: any) {
-            err(`Failed to reload TLS credentials: ${error.message}\n`);
-        }
-    });
-
-    return server;
-}
-
-
-async function startListening(server: http.Server | https.Server, sockAddr: any): Promise<AddressInfo | string> {
+async function startListening(server: http.Server , sockAddr: any): Promise<AddressInfo | string> {
     if (typeof sockAddr === 'string') {
         try {
             await fs.stat(sockAddr);
@@ -201,20 +154,16 @@ class QueueManager {
     const app = express();
     app.use(morgan(devMode ? 'dev' : 'combined'));
 
-    let server: http.Server | https.Server;
-    if (args.tls_cert) {
-        server = await createHTTPSServer(app, args.tls_cert, args.tls_key);
-    } else {
-        log(`Setting up a HTTP server...`);
-        server = createHTTPServer(app);
-        log('done.\n');
-    }
+    let server: http.Server;
+    log(`Setting up a HTTP server...`);
+    server = createHTTPServer(app);
+    log('done.\n');
 
     app.use('/cra.cz', craApi(args, db, queueMgr.push));
     app.use('/ttn', ttnApi(args, db, queueMgr.push));
 
     const addr = await startListening(server, args.listen);
-    log(`HTTP${args.tls_cert ? 'S' : ''} server is listening on ${addrToString(addr)}\n`);
+    log(`HTTP server is listening on ${addrToString(addr)}\n`);
 
     if (args.user || args.group)
         dropPrivileges(args.user, args.group);

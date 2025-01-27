@@ -16,10 +16,8 @@ export interface SockAddr {
 export interface Arguments {
     mqtt_broker? : string;
     config?      : string;
-    tls_cert?    : string;
     db           : string;
     group?       : number;
-    tls_key?     : string;
     listen       : string | SockAddr;
     credentials? : Record<string, any>;
     networks     : Record<string, any>;
@@ -73,10 +71,8 @@ const defaults = {
 const cmdlineArgs = [
     { name : 'mqtt_broker', alias : 'b' },
     { name : 'config',      alias : 'c' },
-    { name : 'tls_cert',    alias : 'C' },
     { name : 'db',          alias : 'd' },
     { name : 'group',       alias : 'g' },
-    { name : 'tls_key',     alias : 'k' },
     { name : 'listen',      alias : 'l' },
     { name : 'networks',    alias : 'n' },
     { name : 'credentials', alias : 'r' },
@@ -211,12 +207,6 @@ export default async function loadArguments(): Promise<Arguments> {
     if (args.mqtt_broker === null)
         throw new Error("Missing 'mqtt_broker' parameter value");
 
-    if (typeof args.tls_cert !== 'undefined' && typeof args.tls_cert !== 'string')
-        throw new Error(`Invalid 'tls_cert' parameter value '${args.tls_cert}'`);
-
-    if (typeof args.tls_key !== 'undefined' && typeof args.tls_key !== 'string')
-        throw new Error(`Invalid 'tls_key' parameter value '${args.tls_key}'`);
-
     if (args.db === null)
         throw new Error("Missing 'db' parameter value");
 
@@ -227,7 +217,7 @@ export default async function loadArguments(): Promise<Arguments> {
         throw new Error("Missing 'listen' parameter value");
 
     if (typeof args.listen === 'undefined')
-        args.listen = { port: args.tls_cert ? 443 : 80 };
+        args.listen = 80;
 
     args.credentials = parseCredentials(args.credentials);
     args.user = parseUser(args.user);
