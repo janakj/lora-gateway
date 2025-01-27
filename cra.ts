@@ -2,10 +2,10 @@ import debug from 'debug';
 import express from 'express';
 import fetch from 'node-fetch';
 import { UnauthorizedError, NotFoundError, jsonify, BadRequestError } from '@janakj/lib/http';
-import { decrypt } from './lora';
-import Database from './db';
-import Message from './message';
-import { Arguments, NetworkConfig, CraNetworkConfig, isCraNetworkConfig } from './args';
+import { decrypt } from './lora.js';
+import Database from './db.js';
+import Message from './message.js';
+import { Arguments, NetworkConfig, CraNetworkConfig, isCraNetworkConfig } from './args.js';
 
 const type = 'cra.cz';
 const dbg = debug('lora:cra.cz');
@@ -126,7 +126,7 @@ class API {
 
             const error: any = new Error(msg);
             error.code = res.status;
-        
+
             throw error;
         }
 
@@ -273,7 +273,7 @@ class Puller {
                 for(const device of devices) {
                     current = device;
                     this.dbg(`Fetching messages between ${since.toISOString()} and ${now.toISOString()} from device ${device}`);
-                    const lst = await this.api.getMessages(device, since, now);    
+                    const lst = await this.api.getMessages(device, since, now);
                     if (lst) this.dbg(`Fetched ${lst.length} message(s)`);
                     await Promise.all(lst.map(m => this.callback(m)));
                 }

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import _ from 'lodash';
 import { parseNumber } from '@janakj/lib/parse';
-import * as defaults from './defaults';
+import * as defaults from './defaults.js';
 
 
 export default function watch(filenames: string[] | string, send: (msg: any) => Promise<void>) {

@@ -1,9 +1,9 @@
 import debug from 'debug';
 import express from 'express';
 import { UnauthorizedError, NotFoundError, jsonify, BadRequestError } from '@janakj/lib/http';
-import Database from './db';
-import Message from './message';
-import { Arguments, NetworkConfig, TtnNetworkConfig, isTtnNetworkConfig } from './args';
+import Database from './db.js';
+import Message from './message.js';
+import { Arguments, NetworkConfig, TtnNetworkConfig, isTtnNetworkConfig } from './args.js';
 
 const dbg = debug('lora:ttn');
 

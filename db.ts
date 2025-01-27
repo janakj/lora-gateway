@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { mkdirSync, chmodSync } from 'fs';
 import { dirname } from 'path';
 import Sqlite from 'better-sqlite3';
-import Message from './message';
+import Message from './message.js';
 import debug from 'debug';
 import pg from 'pg';
 
@@ -56,7 +56,7 @@ class PostgresSQLDatabase extends Database {
         } catch(error) {
             throw new Error(`Could not read file ${filename}: ${error}`);
         }
-        
+
         this.pool = new pg.Pool({
             user     : credentials.user,
             host     : credentials.host,
@@ -195,7 +195,7 @@ class SQLiteDatabase extends Database {
     }
 
     get(name: string) {
-        const v: string | null | undefined = (this.attrSelect.get(name) || {}).value;
+        const v: string | null | undefined = (this.attrSelect.get(name) || {} as any).value;
         return v === null ? undefined : v;
     }
 
@@ -212,6 +212,6 @@ class SQLiteDatabase extends Database {
     }
 
     getMessages() {
-        return this.queueSelect.all().map(row => JSON.parse(row.message));
+        return this.queueSelect.all().map(row => JSON.parse((row as any).message));
     }
 }

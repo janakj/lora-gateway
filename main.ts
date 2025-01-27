@@ -11,11 +11,11 @@ import { fork } from 'child_process';
 
 import abort from '@janakj/lib/abort';
 import sleep from '@janakj/lib/sleep';
-import loadArguments from './args';
-import craApi from './cra';
-import ttnApi from './ttn';
-import Database from './db';
-import Message from './message';
+import loadArguments from './args.js';
+import craApi from './cra.js';
+import ttnApi from './ttn.js';
+import Database from './db.js';
+import Message from './message.js';
 import { AsyncMqttClient } from 'async-mqtt';
 
 
@@ -118,16 +118,16 @@ function dropPrivileges(uid?: number, gid?: number) {
 
     if (gid) {
         log(`Switching to gid ${gid}...`);
-        process.setgroups([gid]);
-        process.setgid(gid);
-        process.setegid(gid);
+        process.setgroups!([gid]);
+        process.setgid!(gid);
+        process.setegid!(gid);
         log('done.\n');
     }
 
     if (uid) {
         log(`Switching to ${uid}...`);
-        process.setuid(uid);
-        process.seteuid(uid);
+        process.setuid!(uid);
+        process.seteuid!(uid);
         log('done.\n');
     }
 }
