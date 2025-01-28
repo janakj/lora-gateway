@@ -334,7 +334,7 @@ export default function (args: Arguments, db: Database, onMessage: (msg: Message
         // timestamp assigned to the message by the network server.
 
         await onMessage({
-            id        : `${type}:${src.EUI}${src.ts}${typeof src.seqno === 'undefined' ? '' : `:${src.seqno}`}`,
+            id        : `${type}:${src.EUI}:${src.ts}${typeof src.seqno === 'undefined' ? '' : `:${src.seqno}`}`,
             eui       : src.EUI,
             timestamp : new Date(src.ts).toISOString(),
             received  : new Date().toISOString(),

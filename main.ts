@@ -146,7 +146,7 @@ class QueueManager {
         mqttClient = await mqtt.connectAsync(args.mqtt_broker);
 
         queueMgr.setSink(async (msg: Message) => {
-            await mqttClient.publish(`LoRa/${msg.eui}/message`, JSON.stringify(msg));
+            await mqttClient.publish(`lora/${msg.eui}/uplink`, JSON.stringify(msg));
         });
         log('done.\n');
     }
