@@ -10,12 +10,12 @@ import { Arguments, NetworkConfig, CraNetworkConfig, isCraNetworkConfig } from '
 const type = 'cra.cz';
 const dbg = debug('lora:cra.cz');
 
-const EUI_REGEX = /[0-9A-F]{16}/,
-    API_BASE = 'https://api.iot.cra.cz/cxf/api/v1',
-    TOKEN_URL = 'https://sso.cra.cz/auth/realms/CRA/protocol/openid-connect/token',
-    CLIENT_ID = 'iot-api-client',
-    CLIENT_SECRET = '41a113b7-5486-45e3-8a3d-e0b106a5d446',
-    FROM_EPOCH = '2020';
+const EUI_REGEX     = /[0-9A-F]{16}/,
+      API_BASE      = 'https://api.iot.cra.cz/cxf/api/v1',
+      TOKEN_URL     = 'https://sso.cra.cz/auth/realms/CRA/protocol/openid-connect/token',
+      CLIENT_ID     = 'iot-api-client',
+      CLIENT_SECRET = '41a113b7-5486-45e3-8a3d-e0b106a5d446',
+      FROM_EPOCH    = '2020';
 
 
 const err = (msg: string) => process.stderr.write(msg);
@@ -26,31 +26,32 @@ interface Envelope {
     tech : string;
 }
 
+
 interface Gateway {
     rssi  : number;
-    tmms  : number;
+    tmms? : number;      // Removed in recent API versions
     snr   : number;
-    ts    : number;
-    time  : string;
+    ts?   : number;      // Removed in recent API versions
+    time? : string;      // Removed in recent API versions
     gweui : string;
     ant   : number;
-    lat   : number;
-    lon   : number;
+    lat?  : number;      // Removed in recent API versions
+    lon?  : number;      // Removed in recent API versions
 }
 
 interface CraMessage {
     cmd      : string;
-    seqno    : number;
+    seqno?   : number;     // Removed in recent API versions
     EUI      : string;
     ts       : number;
     fcnt     : number;
     port     : number;
     freq     : number;
-    toa      : number;
+    toa?     : number;     // Removed in recent API versions
     dr       : string;
     ack      : boolean;
     gws      : Gateway[];
-    bat      : number;
+    bat      : number;     // Always set to 255
     data?    : string;
     encdata? : string;
 }
@@ -58,17 +59,17 @@ interface CraMessage {
 
 function isCraMessage(arg: any): arg is CraMessage {
     const rv = arg.cmd === "gw" &&
-        typeof arg.seqno === 'number' &&
-        typeof arg.EUI === 'string' && arg.EUI.match(EUI_REGEX) &&
-        typeof arg.ts === 'number' &&
-        typeof arg.fcnt === 'number' &&
-        typeof arg.port === 'number' &&
-        typeof arg.freq === 'number' &&
-        typeof arg.toa === 'number' &&
-        typeof arg.dr === 'string' &&
-        typeof arg.ack === 'boolean' &&
-        Array.isArray(arg.gws) && arg.gws.length >= 1 &&
-        typeof arg.bat === 'number';
+        (typeof arg.seqno === 'number' || typeof arg.seqno === 'undefined') &&
+         typeof arg.EUI === 'string' && arg.EUI.match(EUI_REGEX) &&
+         typeof arg.ts === 'number' &&
+         typeof arg.fcnt === 'number' &&
+         typeof arg.port === 'number' &&
+         typeof arg.freq === 'number' &&
+        (typeof arg.toa === 'number' || typeof arg.toa === 'undefined') &&
+         typeof arg.dr === 'string' &&
+         typeof arg.ack === 'boolean' &&
+         Array.isArray(arg.gws) && arg.gws.length >= 1 &&
+         typeof arg.bat === 'number';
 
     if (!rv) return false;
 
@@ -190,7 +191,7 @@ class API {
         return res.data || [];
     }
 
-    async getMessages(device: string, from: Date | string | number, to: Date | string | number): Promise<object[]> {
+    async *getMessages(device: string, from: Date | string | number, to: Date | string | number) {
         /* The new CRA API has a couple of peculiarities:
          * 1) It requires from and to timestamps, they are no longer optional;
          * 2) The two timestamps must be less than 31 days apart;
@@ -200,7 +201,6 @@ class API {
          * complicated. We need to iterate over the time range in 30-day
          * increments and we need to download messages in 1000-message chunks.
          */
-        let messages: object[] = [];
         const message_limit = 1000;
         const day_limit = 30;
 
@@ -216,14 +216,13 @@ class API {
 
             params.set('from', from.toISOString());
             params.set('to', deadline.toISOString());
-            dbg(`${from.toISOString()} ${deadline.toISOString()} ${to.toISOString()}`);
 
             let offset = 0;
             for(;;) {
                 params.set('offset', `${offset}`);
                 const res = await this.requestJSONAuth(`lora/devices/${device}/up/messages?${params}`, 'GET');
                 if (!Array.isArray(res.data)) break;
-                messages = messages.concat(res.data.map((m: any) => m.message));
+                yield { messages: (res.data as any[]).map((m: any) => m.message), from, to: deadline };
                 if (res.data.length < message_limit) break;
                 offset += res.data.length;
             }
@@ -232,7 +231,6 @@ class API {
             from = new Date(deadline);
             from.setMilliseconds(from.getMilliseconds() + 1);
         }
-        return messages;
     }
 }
 
@@ -267,15 +265,26 @@ class Puller {
         try {
             this.dbg(`Listing LoRa devices for ${this.api.username}`);
             const devices: string[] = (await this.api.getDevices()).map((d: any) => d.deviceId);
+            this.dbg(`Found devices: ${devices}`);
 
             let current = '<none>';
             try {
                 for(const device of devices) {
                     current = device;
-                    this.dbg(`Fetching messages between ${since.toISOString()} and ${now.toISOString()} from device ${device}`);
-                    const lst = await this.api.getMessages(device, since, now);
-                    if (lst) this.dbg(`Fetched ${lst.length} message(s)`);
-                    await Promise.all(lst.map(m => this.callback(m)));
+                    this.dbg(`Fetching device ${device} messages from ${since.toISOString()} to ${now.toISOString()}`);
+
+                    let count = 0;
+                    const messageFetcher = this.api.getMessages(device, since, now);
+                    for(;;) {
+                        const { value, done } = await messageFetcher.next();
+                        if (done) break;
+                        const { messages, from, to } = value;
+                        this.dbg(`Found ${messages.length} message(s) between ${from.toISOString()} and ${to.toISOString()}`);
+                        count += messages.length;
+                        await Promise.all(messages.map(m => this.callback(m)));
+                    }
+
+                    this.dbg(`Done processing ${count} messages from device ${device}`);
                 }
                 // Update the timestamp of the most recently fetched message only after
                 // we have successfully submitted all of them.
@@ -317,14 +326,15 @@ export default function (args: Arguments, db: Database, onMessage: (msg: Message
             data = Buffer.from(src.data, 'hex');
             encrypted = false;
         } else {
-            throw new Error(`Missing payload in seqno ${src.seqno} from EUI ${src.EUI}`);
+            throw new Error(`Missing payload in fcnt ${src.fcnt} from EUI ${src.EUI}`);
         }
 
         // Submit the message to upper layers. Construct a unique message id from
         // the string that uniquely identifies the network, the sequence number and
         // timestamp assigned to the message by the network server.
+
         await onMessage({
-            id        : `${type}:${src.ts}:${src.seqno}`,
+            id        : `${type}:${src.EUI}${src.ts}${typeof src.seqno === 'undefined' ? '' : `:${src.seqno}`}`,
             eui       : src.EUI,
             timestamp : new Date(src.ts).toISOString(),
             received  : new Date().toISOString(),
